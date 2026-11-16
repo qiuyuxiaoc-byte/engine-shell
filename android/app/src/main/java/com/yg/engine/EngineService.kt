@@ -53,7 +53,7 @@ class EngineService : Service() {
         if (!File(files, "runtime/rootfs").isDirectory) {
             Thread {
                 try {
-                    RootfsInstaller(this).install { p -> note("解压运行时 $p%") }
+                    RootfsInstaller(this).install { msg -> note(msg) }
                     spawn(files)
                 } catch (t: Throwable) { lastError = t.message; note("解压失败：${t.message}") }
             }.start()
