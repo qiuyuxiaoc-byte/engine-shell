@@ -10,7 +10,7 @@ import java.io.FileOutputStream
  * 首启准备：
  *  1. assets/runtime/rootfs-arm64-v8a.tar.xz → files/runtime/rootfs（原子替换，几分钟，带进度）
  *  2. assets/engine/start-engine.sh          → files/engine/start-engine.sh
- *  3. assets/patches/*.yml                   → files/runtime/rootfs/etc/app/（proot 里就是 /etc/app）
+ *  3. assets/patches 下的 yml 文件          → files/runtime/rootfs/etc/app/（proot 里就是 /etc/app）
  */
 class RootfsInstaller(private val ctx: Context) {
 
