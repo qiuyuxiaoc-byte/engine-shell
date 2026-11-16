@@ -7,48 +7,59 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * 首启准备：
- *  1. assets/runtime/rootfs-arm64-v8a.tar.xz → files/runtime/rootfs（原子替换，几分钟，带进度）
- *  2. assets/engine/start-engine.sh          → files/engine/start-engine.sh
- *  3. assets/patches 下的 yml 文件          → files/runtime/rootfs/etc/app/（proot 里就是 /etc/app）
+ * 首启准备。**用系统自带 toybox tar 解压**（原生 xz，几秒级），不用 Java 逐条写文件。
+ *
+ * 流程：
+ *   1. assets 里的 rootfs.tar.xz → files/runtime/rootfs.tar.xz（流式拷贝，报字节进度）
+ *   2. toybox tar -xJf 解到 files/runtime/rootfs.tmp（原生，约 10~30 秒）
+ *   3. 校验哨兵文件 → 原子改名成 rootfs → 删掉 tarball
+ *   4. 失败才退回 Java 流式解压（兜底，慢但一定能成）
  */
 class RootfsInstaller(private val ctx: Context) {
 
     private val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
 
-    fun install(onProgress: (Int) -> Unit) {
+    fun install(onProgress: (String) -> Unit) {
         val files = File(ctx.applicationInfo.dataDir, "files")
-        val target = File(files, "runtime/rootfs")
+        val runtime = File(files, "runtime").apply { mkdirs() }
+        val target = File(runtime, "rootfs")
+        val staging = File(runtime, "rootfs.tmp")
 
         if (!target.isDirectory) {
-            val staging = File(files, "runtime/rootfs.tmp")
             staging.deleteRecursively(); staging.mkdirs()
             val asset = "runtime/rootfs-$abi.tar.xz"
-            // 万一被 aapt 压缩过，openFd 会抛异常；退化成按已读字节算进度，别让安装失败
-            val total = runCatching { ctx.assets.openFd(asset).length }.getOrElse { 153L * 1024 * 1024 }
-            var read = 0L
-            ctx.assets.open(asset).use { raw ->
-                XZCompressorInputStream(raw, true).use { xz ->
-                    TarArchiveInputStream(xz).use { tar ->
-                        var e = tar.nextEntry
-                        while (e != null) {
-                            val out = File(staging, e.name)
-                            val base = staging.canonicalPath
-                            if (!out.canonicalPath.startsWith(base + File.separator)) throw SecurityException("tar escape: ${e.name}")
-                            if (e.isDirectory) out.mkdirs() else {
-                                out.parentFile?.mkdirs()
-                                FileOutputStream(out).use { fo -> tar.copyTo(fo) }
-                                if (e.mode and 0b001_000_000 != 0) out.setExecutable(true, false)
-                            }
-                            read += e.size.coerceAtLeast(1)
-                            onProgress(((read * 100) / total).toInt().coerceIn(0, 99))
-                            e = tar.nextEntry
-                        }
+            val tarFile = File(runtime, "rootfs.tar.xz")
+
+            // 1) 拷贝
+            val total = runCatching { ctx.assets.openFd(asset).length }
+                .getOrElse { 153L * 1024 * 1024 }
+            var copied = 0L
+            ctx.assets.open(asset).use { input ->
+                FileOutputStream(tarFile).use { out ->
+                    val buf = ByteArray(256 * 1024)
+                    while (true) {
+                        val n = input.read(buf); if (n <= 0) break
+                        out.write(buf, 0, n); copied += n
+                        if (copied % (4L * 1024 * 1024) < n)
+                            onProgress("准备运行时 ${copied * 100 / total}%")
                     }
                 }
             }
+            onProgress("解压运行时…")
+
+            // 2) 原生解压
+            val ok = runTar(tarFile, staging)
+            if (!ok || !File(staging, "usr/local/bin/dsh").exists()) {
+                staging.deleteRecursively(); staging.mkdirs()
+                onProgress("解压运行时（兼容模式）…")
+                javaExtract(tarFile, staging, onProgress)
+            }
+
+            // 3) 校验 + 落地
+            if (!File(staging, "usr/local/bin/dsh").exists()) throw IllegalStateException("rootfs 解压不完整")
             target.deleteRecursively()
             staging.renameTo(target)
+            tarFile.delete()
         }
 
         // 启动脚本
@@ -57,16 +68,51 @@ class RootfsInstaller(private val ctx: Context) {
         ctx.assets.open("engine/start-engine.sh").use { it.copyTo(FileOutputStream(script), 64 * 1024) }
         script.setExecutable(true, false)
 
-        // patch 落到 rootfs 的 /etc/app
+        // 密钥（CI 注入，可能没有）
         val etcApp = File(target, "etc/app").apply { mkdirs() }
-        for (name in ctx.assets.list("patches").orEmpty()) {
+        runCatching {
+            ctx.assets.open("engine/opencode.key").use {
+                it.copyTo(FileOutputStream(File(etcApp, "opencode.key")))
+            }
+        }
+
+        // patch
+        ctx.assets.list("patches").orEmpty().forEach { name ->
             ctx.assets.open("patches/$name").use { it.copyTo(FileOutputStream(File(etcApp, name))) }
         }
-        // 模型密钥（CI 生成，不在仓库里）
-        try {
-            ctx.assets.open("engine/opencode.key").use { it.copyTo(FileOutputStream(File(etcApp, "opencode.key"))) }
-        } catch (_: java.io.IOException) { /* 没配 key 也能起，只是不能对话 */ }
+        onProgress("准备完成")
+    }
 
-        onProgress(100)
+    /** 系统 toybox tar -xJf，原生解压 */
+    private fun runTar(tar: File, dest: File): Boolean = runCatching {
+        val p = ProcessBuilder("/system/bin/toybox", "tar", "-xJf", tar.absolutePath, "-C", dest.absolutePath)
+            .redirectErrorStream(true).start()
+        p.inputStream.bufferedReader().readText()   // 读干净，避免阻塞
+        p.waitFor() == 0
+    }.getOrDefault(false)
+
+    /** 兜底：Java 流式解压（慢，但一定能成） */
+    private fun javaExtract(tar: File, dest: File, onProgress: (String) -> Unit) {
+        var n = 0L
+        tar.inputStream().use { raw ->
+            XZCompressorInputStream(raw, true).use { xz ->
+                TarArchiveInputStream(xz).use { t ->
+                    var e = t.nextEntry
+                    while (e != null) {
+                        val out = File(dest, e.name)
+                        if (!out.canonicalPath.startsWith(dest.canonicalPath + File.separator))
+                            throw SecurityException("tar escape: ${e.name}")
+                        if (e.isDirectory) out.mkdirs() else {
+                            out.parentFile?.mkdirs()
+                            FileOutputStream(out).use { fo -> t.copyTo(fo, 256 * 1024) }
+                            if (e.mode and 0b001_000_000 != 0) out.setExecutable(true, false)
+                        }
+                        n++
+                        if (n % 2000 == 0L) onProgress("兼容解压 $n 个文件")
+                        e = t.nextEntry
+                    }
+                }
+            }
+        }
     }
 }
