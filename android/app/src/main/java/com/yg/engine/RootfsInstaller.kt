@@ -24,7 +24,8 @@ class RootfsInstaller(private val ctx: Context) {
             val staging = File(files, "runtime/rootfs.tmp")
             staging.deleteRecursively(); staging.mkdirs()
             val asset = "runtime/rootfs-$abi.tar.xz"
-            val total = ctx.assets.openFd(asset).length
+            // 万一被 aapt 压缩过，openFd 会抛异常；退化成按已读字节算进度，别让安装失败
+            val total = runCatching { ctx.assets.openFd(asset).length }.getOrElse { 153L * 1024 * 1024 }
             var read = 0L
             ctx.assets.open(asset).use { raw ->
                 XZCompressorInputStream(raw, true).use { xz ->

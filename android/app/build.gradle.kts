@@ -16,6 +16,11 @@ android {
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
+    // rootfs 必须**不压缩**：aapt 压过的 asset 无法 openFd()，且解压时还要二次解压
+    androidResources {
+        noCompress += listOf("xz")
+    }
+
     // proot 及依赖必须以 lib*.so 形式打包，安装时才会被解到 nativeLibraryDir 且可执行
     packaging {
         jniLibs { useLegacyPackaging = true }
