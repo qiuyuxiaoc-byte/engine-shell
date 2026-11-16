@@ -61,6 +61,11 @@ class RootfsInstaller(private val ctx: Context) {
         for (name in ctx.assets.list("patches").orEmpty()) {
             ctx.assets.open("patches/$name").use { it.copyTo(FileOutputStream(File(etcApp, name))) }
         }
+        // 模型密钥（CI 生成，不在仓库里）
+        try {
+            ctx.assets.open("engine/opencode.key").use { it.copyTo(FileOutputStream(File(etcApp, "opencode.key"))) }
+        } catch (_: java.io.IOException) { /* 没配 key 也能起，只是不能对话 */ }
+
         onProgress(100)
     }
 }

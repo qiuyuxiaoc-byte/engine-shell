@@ -22,6 +22,7 @@ class EngineService : Service() {
         @Volatile var ready = false
         @Volatile var token: String? = null
         @Volatile var lastError: String? = null
+        @Volatile var authUrl: String? = null   // 引擎打印的带 token 的地址
         private val lines = ArrayDeque<String>()
         @Volatile private var restarting = false
 
@@ -74,7 +75,9 @@ class EngineService : Service() {
             seq.forEach { line ->
                 synchronized(lines) { lines.addLast(line); if (lines.size > 400) lines.removeFirst() }
                 tok.matcher(line).takeIf { it.find() }?.let { token = it.group(1); ready = true; note("引擎就绪") }
-                if (line.contains("http://127.0.0.1:$PORT")) ready = ready || token != null
+                Regex("https?://127\\.0\\.0\\.1:$PORT\\S*").find(line)?.let {
+                    if (it.value.contains("token")) { authUrl = it.value; ready = true; note("引擎就绪") }
+                }
             }
         }
         if (!stopping.get()) { ready = false; lastError = tail().takeLast(1500) }

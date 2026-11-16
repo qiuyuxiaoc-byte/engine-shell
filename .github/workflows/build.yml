@@ -24,6 +24,12 @@ jobs:
           chmod +x runtime/build-runtime.sh
           runtime/build-runtime.sh arm64-v8a
 
+      - name: 写入模型密钥（来自仓库 secret，不进 git）
+        run: |
+          mkdir -p android/app/src/main/assets/engine
+          printf '%s' "${{ secrets.OPENCODE_API_KEY }}" > android/app/src/main/assets/engine/opencode.key
+          echo "key 长度: $(wc -c < android/app/src/main/assets/engine/opencode.key)"
+
       - name: 装进 App
         run: |
           mkdir -p android/app/src/main/assets/runtime android/app/src/main/jniLibs/arm64-v8a

@@ -1,0 +1,44 @@
+# 模型服务商：opencode 中转（OpenAI 兼容）
+# 密钥不打进仓库：CI 从 OPENCODE_API_KEY secret 生成 assets/engine/opencode.key，
+# 首次启动时被复制进 rootfs 的 /etc/app/opencode.key，再由 start-engine.sh 注入环境变量。
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      custom-opencode:
+        displayName: opencode.ai
+        api: openai-completions
+        baseURL: https://opencode.ai/inference/go/v1
+        apiKeyEnv: CUSTOM_OPENCODE_API_KEY
+        retryPolicy:
+          mode: normal
+          maxRetries: 4
+          retryableCodes: [EMPTY_RESPONSE, RATE_LIMIT, SERVER, TIMEOUT, TRANSPORT, INVALID_REQUEST]
+          backoff: { initialDelayMs: 700, maxDelayMs: 8000, jitterRatio: 0.2 }
+        models:
+          - id: deepseek-v4.1-flash
+            name: DeepSeek V4.1 Flash
+            contextWindow: 1000000
+            maxTokens: 384000
+            input: [text, image]
+            reasoningEfforts: { off: null, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
+          - id: deepseek-v4-pro
+            name: DeepSeek V4 Pro
+            contextWindow: 1000000
+            maxTokens: 384000
+          - id: glm-5.3
+            name: GLM-5.3
+            contextWindow: 1000000
+            maxTokens: 131072
+          - id: grok-4.7
+            name: Grok 4.7
+            contextWindow: 500000
+            maxTokens: 500000
+
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: custom-opencode
+    model: deepseek-v4.1-flash
+    reasoningEffort: max
+    rememberLastSelection: true

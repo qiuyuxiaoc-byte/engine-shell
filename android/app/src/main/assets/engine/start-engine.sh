@@ -29,9 +29,13 @@ ln -sf /dev/urandom "$APP_FILES/runtime/dev-view/random" 2>/dev/null || true
 ln -sf /proc/self/fd "$APP_FILES/runtime/dev-view/fd" 2>/dev/null || true
 
 # patch 链：你自己加的补丁放这里（base 必须有）
-PATCHES="--patch /etc/app/base.patch.yml"
+PATCHES="--patch /etc/app/base.patch.yml --patch /etc/app/provider.patch.yml"
 [ -f /etc/app/mytools.patch.yml ] && PATCHES="$PATCHES --patch /etc/app/mytools.patch.yml"
 [ -f "$ROOTFS/etc/app/mytools.patch.yml" ] && PATCHES="$PATCHES --patch /etc/app/mytools.patch.yml"
+
+# 密钥从 rootfs 里读，避免出现在命令行/日志
+export OPENCODE_KEY="$(cat /etc/app/opencode.key 2>/dev/null)"
+[ -n "$OPENCODE_KEY" ] || echo "warn: /etc/app/opencode.key 为空，模型调用会失败" >&2
 
 exec "$PROOT" \
   --kill-on-exit --link2symlink --sysvipc -L -0 \
@@ -61,4 +65,5 @@ exec "$PROOT" \
     NARB_DISABLE_NATIVE_CACHE=1 \
     NODE_OPTIONS="--dns-result-order=ipv4first --max-old-space-size=1536 --import=/opt/dsh-go/direct/proot-dns.mjs" \
     DSH_GO_RUNTIME_ROOT="$ROOTFS" \
+    CUSTOM_OPENCODE_API_KEY="${OPENCODE_KEY}" \
     /bin/sh -c "exec /usr/local/bin/dsh web $PATCHES --host 127.0.0.1 --port $PORT --no-open"
