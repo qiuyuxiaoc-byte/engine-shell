@@ -1,0 +1,14 @@
+# 你的业务工具层：把 MCP server 挂进引擎，agent 立刻就会用它。
+# 这个写法和 dsh-go 的 phone.patch.yml 一模一样。
+- insert:
+    - id: my-app-tools
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: myapp
+        transport: stdio
+        # 注意：!!js 会在引擎进程里求值，用 process.execPath 拿到引擎自己的 node
+        command: !!js process.execPath
+        args:
+          - /opt/app/tools/my-mcp.js
+        toolCallTimeoutMs: 120000
+        failOnStartupError: false

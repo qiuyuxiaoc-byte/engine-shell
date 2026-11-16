@@ -1,0 +1,7 @@
+# 基础覆盖层：每次启动都加载。只放"必须"的东西，业务工具放 mytools.patch.yml。
+# 语法就是 Cordis patch：顶层数组，insert 一个插件条目，或按 id 覆盖某个插件的 config。
+- id: plugin-manager
+  config:
+    fallbackRegistries:
+      - https://registry.npmmirror.com/
+      - https://registry.npmjs.org/

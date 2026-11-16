@@ -1,0 +1,46 @@
+name: Build engine-shell APK
+on: [workflow_dispatch, push]
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+
+      # 运行时（rootfs + proot so）直接复用上游构建脚本：纯组装，不跑 arm 代码
+      - name: 取上游运行时构建器
+        run: git clone --depth 1 https://github.com/ccch1mneyyy/dsh-Go upstream
+
+      - name: 构建运行时（约 3 分钟）
+        run: |
+          cd upstream
+          chmod +x runtime/build-runtime.sh
+          runtime/build-runtime.sh arm64-v8a
+
+      - name: 装进 App
+        run: |
+          mkdir -p android/app/src/main/assets/runtime android/app/src/main/jniLibs/arm64-v8a
+          cp -r upstream/runtime/out/arm64-v8a/assets/runtime/* android/app/src/main/assets/runtime/
+          cp upstream/runtime/out/arm64-v8a/jniLibs/arm64-v8a/*.so android/app/src/main/jniLibs/arm64-v8a/
+          du -sh android/app/src/main/assets/runtime
+
+      - name: 装 Gradle
+        run: |
+          curl -fsSL -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.13-bin.zip
+          unzip -q /tmp/gradle.zip -d /opt && echo "/opt/gradle-8.13/bin" >> "$GITHUB_PATH"
+
+      - name: 构建 APK
+        run: gradle -p android :app:assembleRelease --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-shell-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

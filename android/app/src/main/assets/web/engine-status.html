@@ -1,0 +1,14 @@
+<!doctype html><meta charset="utf-8"><title>engine</title>
+<style>body{font:14px/1.6 -apple-system,system-ui,sans-serif;padding:20px;background:#fafafa}
+pre{background:#fff;border:1px solid #eee;border-radius:10px;padding:12px;overflow:auto;max-height:60vh}
+b{color:#0a7}</style>
+<h3>引擎状态</h3><div id="s">读取中…</div><pre id="log"></pre>
+<script>
+  function tick(){
+    const i = JSON.parse(Engine.info())
+    document.getElementById('s').innerHTML =
+      `端口 <b>${i.port}</b> · 就绪 <b>${i.ready}</b> · token ${i.token ? i.token.slice(0,6)+'…' : '（无）'}`
+    document.getElementById('log').textContent = Engine.log() || '（暂无日志）'
+  }
+  setInterval(tick, 1000); tick()
+</script>
