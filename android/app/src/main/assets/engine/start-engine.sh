@@ -30,11 +30,10 @@ ln -sf /proc/self/fd "$APP_FILES/runtime/dev-view/fd" 2>/dev/null || true
 
 # patch 链：你自己加的补丁放这里（base 必须有）
 PATCHES="--patch /etc/app/base.patch.yml --patch /etc/app/provider.patch.yml"
-[ -f /etc/app/mytools.patch.yml ] && PATCHES="$PATCHES --patch /etc/app/mytools.patch.yml"
 [ -f "$ROOTFS/etc/app/mytools.patch.yml" ] && PATCHES="$PATCHES --patch /etc/app/mytools.patch.yml"
 
 # 密钥从 rootfs 里读，避免出现在命令行/日志
-export OPENCODE_KEY="$(cat /etc/app/opencode.key 2>/dev/null)"
+export OPENCODE_KEY="$(cat "$ROOTFS/etc/app/opencode.key" 2>/dev/null)"
 [ -n "$OPENCODE_KEY" ] || echo "warn: /etc/app/opencode.key 为空，模型调用会失败" >&2
 
 exec "$PROOT" \
